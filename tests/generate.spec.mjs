@@ -50,9 +50,8 @@ function syntheticPatch(options = {}) {
     '      config:',
     '        id: daily',
     '        plugins: []',
-    END,
-    '',
-    // What the settings UI appends, and where it lands: inside the region.
+    // What the settings UI appends, and where it lands: between the markers,
+    // after this script's own entry.
     '- id: agent-preset-registry',
     '  name: "@deepseek-ai/dsh-agent-preset-registry"',
     '  config:',
@@ -63,6 +62,7 @@ function syntheticPatch(options = {}) {
     '  config:',
     '    enabled: false',
     '    allowedModels: []',
+    END,
     '',
     '- id: ui-settings',
     '  name: "@deepseek-ai/dsh-ui-settings"',
@@ -87,7 +87,12 @@ function topLevelIds(text) {
     .map((line) => /^-\s+id:\s*(\S+)/.exec(line)[1])
 }
 
-/** The value of one settings entry, wherever it ended up. */
+/** How many times a top-level entry with this id appears. */
+function idCount(text, id) {
+  return topLevelIds(text).filter((found) => found === id).length
+}
+
+/** The value of the settings entry this test file's patch carries. */
 function defaultValue(text) {
   const lines = text.split('\n')
   const at = lines.findIndex((line) => /^-\s+id:\s*agent-preset-registry\s*$/.test(line))
@@ -137,32 +142,41 @@ test('the official Codex row stays disabled, as the base ships it', { skip }, ()
   }
 })
 
-test('a settings write inside the region leaves exactly one entry', { skip }, () => {
+test('settings entries are left exactly where the settings UI put them', { skip }, () => {
+  // The whole class of bug this replaces came from moving them: a run relocated
+  // them out of the region, the next settings write landed inside again, and each
+  // run left another copy behind. Replacing only this script's own entry means
+  // there is nothing to move, so there is nothing to accumulate.
   const path = syntheticPatch()
   generate(path)
-  // The settings UI writes again, inside the markers, with a new value.
+  const once = readFileSync(path, 'utf8')
+  const region = once.slice(once.indexOf(BEGIN), once.indexOf(END))
+
+  assert.ok(region.includes('id: agent-preset-registry'), 'left inside the region')
+  assert.ok(region.includes('id: subagent-model-selection-settings'), 'left inside the region')
+  assert.equal(idCount(once, 'agent-preset-registry'), 1)
+
+  // A second run must not add another, and must not move it out either.
+  generate(path)
+  const twice = readFileSync(path, 'utf8')
+  assert.equal(twice, once)
+  assert.equal(idCount(twice, 'agent-preset-registry'), 1)
+  assert.equal(defaultValue(twice), 'standard', 'the value it had is the value it keeps')
+})
+
+test('a value the settings UI changed is not overwritten', { skip }, () => {
+  const path = syntheticPatch()
+  generate(path)
   const lines = readFileSync(path, 'utf8').split('\n')
-  const end = lines.findIndex((line) => line.includes(END))
-  lines.splice(end, 0,
-    '- id: agent-preset-registry',
-    '  name: "@deepseek-ai/dsh-agent-preset-registry"',
-    '  config:',
-    '    default: heavy',
-    '    selectedDefault: heavy',
-  )
+  const at = lines.findIndex((line) => /^\s+default: standard\s*$/.test(line))
+  assert.ok(at > 0, 'the settings entry is there to change')
+  lines[at] = '    default: heavy'
   writeFileSync(path, lines.join('\n'))
 
   generate(path)
-  const text = readFileSync(path, 'utf8')
-  // Without de-duplication the previous run's copy is still there and this adds
-  // another: two entries, and one more on every later write.
-  assert.equal(topLevelIds(text).filter((id) => id === 'agent-preset-registry').length, 1)
-  // And the newest value is the one that survives, because the re-emitted entry
-  // follows the block and DSH applies the later entry last.
-  assert.equal(defaultValue(text), 'heavy')
-
-  generate(path)
-  assert.equal(topLevelIds(readFileSync(path, 'utf8')).filter((id) => id === 'agent-preset-registry').length, 1)
+  // The entry is not ours, so its value is none of our business — including when
+  // it is a value we would not have written.
+  assert.equal(defaultValue(readFileSync(path, 'utf8')), 'heavy')
 })
 
 test('--daily-only refuses to drop a preset the file already defines', { skip }, () => {

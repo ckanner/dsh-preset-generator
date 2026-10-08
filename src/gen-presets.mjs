@@ -243,118 +243,98 @@ function parseArgs(argv) {
 function buildBlock(baseLines, { withHeavy }) {
   const basePlugins = extractPlugins(baseLines)
   const specs = withHeavy ? [PRESETS.daily, PRESETS.heavy] : [PRESETS.daily]
-  const lines = [BEGIN, '- insert:']
+  const lines = ['- insert:']
   for (const spec of specs) lines.push(...renderPreset(spec, basePlugins))
-  lines.push(END)
-  return { block: lines.join('\n'), basePlugins, specs }
+  return { body: lines.join('\n'), basePlugins, specs }
 }
 
 /** Replace the marked block in place, or append one. */
 /**
- * Top-level entries inside the marked region that this script did not write.
+ * Whether a top-level entry is the one this script wrote.
  *
- * The settings UI appends its own entries to the profile patch, and it can land
- * them between the markers — the model-selection settings and the preset
- * registry have both done so. Splicing the block would delete them silently,
- * taking the user's settings with it, so they are collected and re-emitted after
- * the block.
+ * The markers only say where the block lives, and the region is not exclusively
+ * ours: DSH's settings UI appends its own entries there. So the entry to replace
+ * is identified by what it contains — the `- insert:` shell carrying preset rows
+ * — rather than by being the only thing between the markers.
  *
- * @param region - the text between the markers.
- * @returns each foreign entry, verbatim.
+ * @param entry - the lines of one top-level entry.
+ * @returns whether it is this script's.
  */
-function foreignEntries(region) {
-  const lines = region.split('\n')
-  const out = []
-  let i = 0
-  while (i < lines.length) {
-    // This script's own rows are indented, or the single `- insert:` shell. The
-    // separator is `\s+`, not one space: `-  id: x` is the same YAML and would
-    // otherwise be spliced away with the block.
-    if (/^-\s+(?!insert:)\S/.test(lines[i])) {
-      const start = i
-      i += 1
-      while (i < lines.length && !/^-\s+(?!insert:)\S/.test(lines[i])) i += 1
-      out.push(lines.slice(start, i).join('\n').replace(/\s+$/, ''))
-      continue
-    }
-    i += 1
-  }
-  return out
-}
-
-/** The `id` a top-level entry declares, or `undefined` when it declares none. */
-function entryId(entry) {
-  return /^-\s+id:\s*(\S+)/m.exec(entry)?.[1]
+function isOwnEntry(entry) {
+  return /^-\s+insert:\s*$/.test(entry[0]) && entry.some((line) => /^\s+- id: preset-/.test(line))
 }
 
 /**
- * Drop every top-level entry whose `id` is in `ids`, with everything under it.
+ * Replace this script's own entry inside the region, and nothing else.
  *
- * The entries `foreignEntries` collects carry the newest values the settings UI
- * wrote, and they are emitted after the block so they win by the profile's
- * id-merge. A copy already outside the region therefore has to go: without this,
- * every later write inside the markers leaves another entry behind and the file
- * grows by one on every run.
+ * Everything else in the region is left exactly where it is. That is the whole
+ * point: entries the settings UI put there are neither moved nor re-emitted, so
+ * there is nothing to collect, nothing to de-duplicate, and no way for a
+ * repeated settings write to accumulate a copy per run.
  *
- * @param text - a patch, or part of one.
- * @param ids - the ids to remove.
- * @returns the text without those entries.
+ * @param region - the text between the markers.
+ * @param body - the entry to write, without the markers.
+ * @returns the region with our entry replaced.
  */
-function withoutEntries(text, ids) {
-  if (ids.size === 0) return text
-  const lines = text.split('\n')
-  const kept = []
+function replaceOwnEntry(region, body) {
+  const lines = region.split('\n')
+  const out = []
+  let replaced = false
   let i = 0
   while (i < lines.length) {
     if (!/^-\s+\S/.test(lines[i])) {
-      kept.push(lines[i])
+      out.push(lines[i])
       i += 1
       continue
     }
     const start = i
     i += 1
     while (i < lines.length && !/^-\s+\S/.test(lines[i])) i += 1
-    const body = lines.slice(start, i)
-    const id = entryId(body[0])
-    if (id !== undefined && ids.has(id)) continue
-    kept.push(...body)
+    const entry = lines.slice(start, i)
+    if (!replaced && isOwnEntry(entry)) {
+      // The entry as consumed includes the blank lines that followed it, since
+      // they are not the start of another entry. They separate it from whatever
+      // comes next, so they are restored — otherwise the marker that follows ends
+      // up glued to the last line of the body.
+      const trailing = []
+      while (entry.length > 0 && entry[entry.length - 1].trim() === '') trailing.unshift(entry.pop())
+      out.push(...body.split('\n'), ...trailing)
+      replaced = true
+      continue
+    }
+    out.push(...entry)
   }
-  return kept.join('\n')
+  // No entry of ours inside — a hand-edited file, or a region whose block was
+  // removed. Writing one is the same thing the first run does.
+  if (!replaced) out.unshift(body)
+  return out.join('\n')
 }
 
-function spliceBlock(text, block) {
+function spliceBlock(text, body) {
   const begin = text.indexOf(BEGIN)
   const end = text.indexOf(END)
   if (begin >= 0 && end > begin) {
-    const foreign = foreignEntries(text.slice(begin, end))
-    if (foreign.length > 0) {
-      process.stderr.write(
-        `preserving ${foreign.length} entr${foreign.length === 1 ? 'y' : 'ies'} found inside the block:\n`
-        + foreign.map((entry) => `  ${entry.split('\n')[0]}\n`).join(''),
-      )
-    }
-    const kept = foreign.length === 0 ? '' : `\n${foreign.join('\n\n')}\n`
-    // Only the ids actually being re-emitted, and only where they are not the
-    // entry being kept: `foreign` itself is what follows the block.
-    const ids = new Set(foreign.map(entryId).filter((id) => id !== undefined))
-    return withoutEntries(text.slice(0, begin), ids)
-      + block
-      + withoutEntries(text.slice(end + END.length), ids)
-      + kept
+    // `region` runs from just after the BEGIN marker to just before END, so it
+    // already carries the newline that ends the marker line and the one before
+    // END. Adding either again would leave a blank line behind on every run.
+    const region = text.slice(begin + BEGIN.length, end)
+    return text.slice(0, begin)
+      + BEGIN + replaceOwnEntry(region, body) + END
+      + text.slice(end + END.length)
   }
   const separator = text.endsWith('\n') ? '\n' : '\n\n'
-  return `${text}${separator}${block}\n`
+  return `${text}${separator}${BEGIN}\n${body}\n${END}\n`
 }
 
 function main() {
   const opts = parseArgs(process.argv.slice(2))
   const baseLines = readAsarFile(opts.asar, BASE_PRESET).toString('utf8').split('\n')
-  const { block, basePlugins, specs } = buildBlock(baseLines, opts)
+  const { body, basePlugins, specs } = buildBlock(baseLines, opts)
   const verb = opts.dryRun ? 'would write' : 'wrote'
   const rowCount = basePlugins.filter((line) => /^\s*- id: /.test(line)).length
 
   if (opts.dryRun) {
-    process.stdout.write(`${block}\n`)
+    process.stdout.write(`${BEGIN}\n${body}\n${END}\n`)
   } else {
     const target = opts.out ?? join(opts.profile, 'cordis.patch.yml')
     const before = readFileSync(target, 'utf8')
@@ -363,7 +343,7 @@ function main() {
     // user relies on as a side effect of an argument they did not pass.
     for (const preset of ['daily', 'heavy']) {
       const had = before.includes(`- id: preset-${preset}`)
-      const keeps = block.includes(`- id: preset-${preset}`)
+      const keeps = body.includes(`- id: preset-${preset}`)
       if (had && !keeps) {
         throw new Error(
           `${target} already defines preset-${preset} and this run would remove it. `
@@ -371,7 +351,7 @@ function main() {
         )
       }
     }
-    writeFileSync(target, spliceBlock(before, block), { mode: 0o600 })
+    writeFileSync(target, spliceBlock(before, body), { mode: 0o600 })
     process.stderr.write(`${verb} ${target}\n`)
   }
   process.stderr.write(

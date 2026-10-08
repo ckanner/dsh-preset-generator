@@ -43,20 +43,28 @@ The official `tool-subagent-codex` row stays **disabled** — as the base ships 
 its own `subagent_codex` per Agent, and two rows registering that name in one scope collide: the later
 registration throws and its tool never appears.
 
-## What it must not destroy
+## What it must not touch
 
-The region between the markers is also written by DSH's settings UI, which appends entries such as
-`agent-preset-registry` and `subagent-model-selection-settings` there. Splicing the region deletes them silently,
-taking the user's settings with it.
+The region between the markers is **not exclusively this script's**. DSH's settings UI appends its own entries
+there — `agent-preset-registry` and `subagent-model-selection-settings` have both landed between the markers —
+and so may anything else that writes a profile patch.
 
-So entries this script did not write are:
+So a run replaces **only its own entry**: the `- insert:` shell carrying the preset rows. Everything else in the
+region is left exactly where it is, byte for byte.
 
-1. **collected** from inside the region,
-2. **re-emitted after** the block — which also makes the newest value win, since DSH merges by `id` and the later
-   entry is applied last, and
-3. **de-duplicated** against any copy already outside the region. Without this, a settings write that lands
-   inside again would leave the previous run's copy behind and add another, growing the file by one entry per
-   write.
+That is a stronger property than handling them carefully. An earlier version replaced the whole region, then
+re-emitted the entries it had not written after the block, then de-duplicated them against copies already
+outside it — three mechanisms, each fixing a failure of the one before:
+
+| Approach | What went wrong |
+|---|---|
+| Replace the region | Deleted the settings entries silently |
+| Re-emit them after the block | The next settings write landed inside again, and the run left another copy each time |
+| De-duplicate by id | Correct, but ~60 lines that exist only to undo a move that should not happen |
+
+Replacing one entry has none of those failure modes, because nothing is ever moved: there is no copy to
+de-duplicate and nothing to accumulate. Entries that are not ours are not read, not rewritten, and not
+relocated — including values this script would not have chosen.
 
 ## Development
 
