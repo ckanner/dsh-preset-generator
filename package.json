@@ -11,6 +11,7 @@
   "files": [
     "src",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
@@ -20,8 +21,16 @@
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
+  "homepage": "https://github.com/ckanner/dsh-preset-generator#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ckanner/dsh-preset-generator.git"
-  }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "presets",
+    "configuration"
+  ]
 }

@@ -1,5 +1,7 @@
 # dsh-preset-generator
 
+English | [中文](docs/README.zh.md)
+
 Materialize [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) agent presets from the base preset
 that ships inside the application.
 
