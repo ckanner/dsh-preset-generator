@@ -28,11 +28,11 @@ DSH 的 agent preset **没有继承**。一个 preset 的 `plugins` 列表就是
 | preset | 基底 | 策略 |
 |---|---|---|
 | `daily`（日常） | 自带的 `ptc` preset | 各插件行；Codex 委派由一套独立 provider 提供 |
-| `heavy`（重活） | 同上，且 `tool-presentation: both` | 以上全部，外加 computer use |
+| `heavy`（重活） | 同上，且 `tool-presentation: native` | 以上全部，外加 computer use |
 
-`tool-presentation: both` 是刻意的：纯 `ptc` 呈现下模型只看得到 `run_code`，一个可直接调用的工具就得嵌成另一个 JavaScript 程序里的字符串。
+`tool-presentation: native` 是刻意的：纯 `ptc` 呈现下模型只看得到 `run_code`，一个可直接调用的工具就得嵌成另一个 JavaScript 程序里的字符串。DSH 0.2.1 移除了旧的 `both` 模式 —— 一个 preset 只能声明一种呈现，且只有 `native` 与 `ptc` —— 所以 `heavy` 干脆放弃 PTC，让 computer-use 工具保持可直接调用。
 
-官方的 `tool-subagent-codex` 行保持**禁用** —— 和基底一致。另有一套独立 provider 自己注册 `subagent_codex`，而两行在同一个 scope 里注册同名工具会冲突：后一次注册抛错，它的工具**永远不会出现**。
+官方的 Codex 工具不再是 per-preset 行：从 DSH 0.2.1 起，`@deepseek-ai/dsh-subagent-codex` bundle 提供的是**全局**的 `subagent_codex` 工具；独立 provider（`dsh-subagent-codex-pro`）在这些 preset 里按 Agent 注册同名工具，遮蔽全局那个。而**同一个** scope 内的两次注册仍会冲突，所以不能在这个 provider 之外再启用同名的 `tool-subagent` 行。
 
 ## 它绝不能碰的东西
 

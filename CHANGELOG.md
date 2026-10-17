@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.1
+
+Track DSH Desktop 0.2.1.
+
+**`heavy` uses `native` presentation.** DSH 0.2.1 removed the `both` tool-presentation mode; a preset declares
+one presentation and only `native` and `ptc` exist. `heavy` now asks for `native`, which keeps computer-use tools
+directly callable and gives up the PTC `run_code` surface for that preset. A profile regenerated against the new
+app no longer fails the `heavy` mount.
+
+**Re-run after upgrading DSH.** The shipped base changed again: `persona.suffix` with `{{cwd}}` is gone (the
+variable no longer exists and prompt assembly rejects it), `time-context` and `tool-schedule` rows were added,
+`backgroundMode` was removed from `tool-subagent`, and the per-preset `tool-subagent-codex` /
+`tool-subagent-claude-code` / `tool-ralph` rows were dropped. The generator reads the installed base, so a re-run
+picks all of it up; the tests now pin the current surface instead of the old Codex-row expectation.
+
 ## 0.1.0
 
 First release, as a project of its own.

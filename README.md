@@ -36,14 +36,17 @@ make this script **append a second block** instead of replacing the first.
 | Preset | Base | Policy |
 |---|---|---|
 | `daily` (日常) | the shipped `ptc` preset | plugin rows, Codex delegation via a separate provider |
-| `heavy` (重活) | the same, with `tool-presentation: both` | everything above, plus computer use |
+| `heavy` (重活) | the same, with `tool-presentation: native` | everything above, plus computer use |
 
-`tool-presentation: both` is deliberate: in pure `ptc` presentation the model only sees `run_code`, so a
-directly-callable tool would have to be nested as a JavaScript string inside another JavaScript program.
+`tool-presentation: native` is deliberate: in pure `ptc` presentation the model only sees `run_code`, so a
+directly-callable tool would have to be nested as a JavaScript string inside another JavaScript program. DSH
+0.2.1 removed the old `both` mode — a preset declares exactly one presentation, `native` or `ptc` — so `heavy`
+opts out of PTC entirely to keep computer-use tools directly callable.
 
-The official `tool-subagent-codex` row stays **disabled** — as the base ships it. A separate provider registers
-its own `subagent_codex` per Agent, and two rows registering that name in one scope collide: the later
-registration throws and its tool never appears.
+The official Codex tool is no longer a per-preset row: as of DSH 0.2.1 the `@deepseek-ai/dsh-subagent-codex`
+bundle contributes a **global** `subagent_codex` tool, and a separate provider (`dsh-subagent-codex-pro`)
+registers its own same-named tool per Agent for these presets, shadowing the global one. Two registrations in
+*one* scope still collide, so nothing may enable a same-name `tool-subagent` row beside that provider.
 
 ## What it must not touch
 

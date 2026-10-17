@@ -128,18 +128,28 @@ test('a run replaces the block, keeps every other entry, and stays idempotent', 
   assert.equal(readFileSync(path, 'utf8'), once, 'a second run must change nothing')
 })
 
-test('the official Codex row stays disabled, as the base ships it', { skip }, () => {
+test('the presets carry the base’s current tool-subagent surface', { skip }, () => {
   const path = syntheticPatch()
   generate(path)
   const text = readFileSync(path, 'utf8')
-  // Two rows, one per preset. Enabling either would collide with the provider
-  // that registers `subagent_codex` itself.
-  const rows = text.split('\n').filter((line) => /^\s+- id: tool-subagent-codex\s*$/.test(line))
-  assert.equal(rows.length, 2, 'one Codex row per preset')
-  for (const row of rows) {
-    const at = text.indexOf(row)
-    assert.match(text.slice(at, at + 200), /disabled: true/, 'the Codex row must stay disabled')
-  }
+  // DSH 0.2.1 removed `backgroundMode` from tool-subagent's config and stopped
+  // shipping a per-preset tool-subagent-codex row: the official Codex bundle now
+  // contributes a global Host tool instead. The generated block must carry
+  // neither leftover, and the `{{cwd}}` template variable must be gone.
+  const codexRows = text.split('\n').filter((line) => /^\s+- id: tool-subagent-codex\s*$/.test(line))
+  assert.equal(codexRows.length, 0, 'the current base ships no per-preset Codex row')
+  assert.doesNotMatch(text, /^\s+backgroundMode:/m, 'backgroundMode was removed from tool-subagent config')
+  assert.ok(!text.includes('{{cwd}}'), 'the {{cwd}} prompt variable no longer exists')
+})
+
+test('heavy is native and daily keeps the base PTC presentation', { skip }, () => {
+  const path = syntheticPatch()
+  generate(path)
+  const text = readFileSync(path, 'utf8')
+  // One presentation per agent, and DSH 0.2.1 accepts only native | ptc.
+  assert.match(text, /mode: ptc/)
+  assert.match(text, /mode: native/)
+  assert.doesNotMatch(text, /mode: both/)
 })
 
 test('settings entries are left exactly where the settings UI put them', { skip }, () => {

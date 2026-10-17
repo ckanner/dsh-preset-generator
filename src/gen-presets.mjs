@@ -50,8 +50,9 @@ const BEGIN = '# >>> BEGIN generated presets (scripts/gen-presets.mjs) >>>'
 const END = '# <<< END generated presets <<<'
 
 /** The two presets this script owns. `daily` is a faithful PTC + Codex; `heavy`
- * flips the tool presentation to `both` so LCU's `js` is callable natively
- * instead of being nested inside a `run_code` program. */
+ * selects `native` presentation so LCU's tools stay directly callable. DSH
+ * 0.2.1 removed the old `both` mode: a preset declares one presentation, and
+ * the only choices are `native` and `ptc`. */
 const PRESETS = {
   daily: {
     id: 'daily',
@@ -71,11 +72,13 @@ const PRESETS = {
     name: '重活',
     description: '超前/困难的重活：需要 Computer 或 Browser 时用',
     order: 6,
-    // `both` so LCU's `js` stays callable natively: in pure `ptc` presentation
-    // the model would have to nest a whole CUA program inside a run_code string.
+    // `native` so LCU's tools stay directly callable. DSH 0.2.1 removed the old
+    // `both` mode — a preset declares one presentation and only `native | ptc`
+    // exist — so the choice is "all tools native" (here) or pure `ptc`, where the
+    // model would have to nest a whole CUA program inside a run_code string.
     // No tool row is added here — the plugin is mounted at the profile root and
     // registers its tools per Agent by checking this preset's id.
-    presentation: 'both',
+    presentation: 'native',
     // Same reason as `daily`: the official Codex row stays disabled so that
     // `dsh-subagent-codex-pro` is the only provider of `subagent_codex`.
     enable: [],
