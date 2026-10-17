@@ -22,7 +22,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
       # There are no dependencies to install: the script imports node builtins only.
       - name: Test
         run: npm test
