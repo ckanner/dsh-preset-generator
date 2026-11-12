@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0
+
+Track DSH Desktop 0.2.2 and stop generating the deprecated presentation selector.
+
+**The generated presets mount the executor directly.** DSH 0.2.2 deprecates
+`@deepseek-ai/dsh-agent-tool-presentation`; the base preset now carries
+`@deepseek-ai/dsh-tool-executor-ptc`. The generator replaces that row with
+`tool-executor-ptc` (daily) or `tool-executor-native` (heavy) instead of writing a
+`mode:` field, and still accepts a pre-0.2.2 base that has the old selector.
+
+**Re-run after upgrading DSH.** The 0.2.2 base adds `tool-office`, the
+`tool-fs.applyPatch` option, and `tool-subagent-control.interrupt`; a re-run picks
+them up. The `--dry-run` output now matches the current profile block except for
+these base changes.
+
 ## 0.1.1
 
 Track DSH Desktop 0.2.1.

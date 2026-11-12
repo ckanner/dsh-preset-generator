@@ -36,9 +36,9 @@ make this script **append a second block** instead of replacing the first.
 | Preset | Base | Policy |
 |---|---|---|
 | `daily` (日常) | the shipped `ptc` preset | plugin rows, Codex delegation via a separate provider |
-| `heavy` (重活) | the same, with `tool-presentation: native` | everything above, plus computer use |
+| `heavy` (重活) | the same, with `tool-executor-native` | everything above, plus computer use |
 
-`tool-presentation: native` is deliberate: in pure `ptc` presentation the model only sees `run_code`, so a
+`tool-executor-native` is deliberate: in pure `ptc` presentation the model only sees `run_code`, so a
 directly-callable tool would have to be nested as a JavaScript string inside another JavaScript program. DSH
 0.2.1 removed the old `both` mode — a preset declares exactly one presentation, `native` or `ptc` — so `heavy`
 opts out of PTC entirely to keep computer-use tools directly callable.

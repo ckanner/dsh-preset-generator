@@ -50,16 +50,16 @@ const BEGIN = '# >>> BEGIN generated presets (scripts/gen-presets.mjs) >>>'
 const END = '# <<< END generated presets <<<'
 
 /** The two presets this script owns. `daily` is a faithful PTC + Codex; `heavy`
- * selects `native` presentation so LCU's tools stay directly callable. DSH
- * 0.2.1 removed the old `both` mode: a preset declares one presentation, and
- * the only choices are `native` and `ptc`. */
+ * selects `native` presentation so LCU's tools stay directly callable. A preset
+ * declares exactly one presentation, and DSH 0.2.2 deprecates the selector in
+ * favour of mounting `dsh-tool-executor-native` / `-ptc` directly. */
 const PRESETS = {
   daily: {
     id: 'daily',
     name: '日常',
     description: '日常编码：PTC 程序化工具调用 + Codex 委派',
     order: 5,
-    presentation: null, // keep the base's `ptc`
+    presentation: 'ptc', // the base's PTC executor, stated explicitly
     // Nothing to enable. The base ships `tool-subagent-codex` disabled, and it
     // stays that way: `dsh-subagent-codex-pro` registers its own
     // `subagent_codex` per Agent, and two rows registering that name in one
@@ -72,10 +72,9 @@ const PRESETS = {
     name: '重活',
     description: '超前/困难的重活：需要 Computer 或 Browser 时用',
     order: 6,
-    // `native` so LCU's tools stay directly callable. DSH 0.2.1 removed the old
-    // `both` mode — a preset declares one presentation and only `native | ptc`
-    // exist — so the choice is "all tools native" (here) or pure `ptc`, where the
-    // model would have to nest a whole CUA program inside a run_code string.
+    // `native` so LCU's tools stay directly callable. A preset declares one
+    // presentation; the choice is "all tools native" (here) or pure `ptc`, where
+    // the model would have to nest a whole CUA program inside a run_code string.
     // No tool row is added here — the plugin is mounted at the profile root and
     // registers its tools per Agent by checking this preset's id.
     presentation: 'native',
@@ -161,17 +160,38 @@ function enableRow(lines, rowId) {
   return lines // already enabled — idempotent
 }
 
-/** Rewrite `mode:` inside the `tool-presentation` row. */
-function setPresentationMode(lines, mode) {
-  const start = findRow(lines, 'tool-presentation')
-  for (const i of body(lines, start)) {
-    if (/^\s*mode:\s*\S+\s*$/.test(lines[i])) {
-      const next = [...lines]
-      next[i] = lines[i].replace(/mode:\s*\S+\s*$/, `mode: ${mode}`)
-      return next
-    }
+/** Replace the base's tool-presentation selector with the concrete executor.
+ *
+ * DSH 0.2.2 carries `@deepseek-ai/dsh-tool-executor-ptc` in the base preset and
+ * deprecates `@deepseek-ai/dsh-agent-tool-presentation`. Older bases still have
+ * the selector with a `mode:` field. Both shapes are accepted here: the row is
+ * replaced in place, so the custom preset asks for the executor directly and
+ * never mounts the deprecated selector.
+ */
+function setPresentation(lines, presentation) {
+  const rowId = `tool-executor-${presentation}`
+  const rowName = `@deepseek-ai/dsh-tool-executor-${presentation}`
+  const start = lines.findIndex((line) => {
+    const text = line.trim()
+    return /^- id: tool-executor-(native|ptc)$/.test(text) || text === '- id: tool-presentation'
+  })
+  if (start < 0) throw new Error('base preset has no tool-presentation or tool-executor row')
+
+  const base = indentOf(lines[start])
+  const indent = lines[start].slice(0, base)
+  let end = start + 1
+  while (end < lines.length) {
+    const ind = indentOf(lines[end])
+    if (ind !== -1 && ind <= base) break
+    end += 1
   }
-  throw new Error('tool-presentation row has no `mode:` field')
+  const trailing = []
+  while (end > start + 1 && lines[end - 1].trim() === '') {
+    trailing.unshift(lines[end - 1])
+    end -= 1
+  }
+  const replacement = [`${indent}- id: ${rowId}`, `${indent}  name: '${rowName}'`]
+  return [...lines.slice(0, start), ...replacement, ...trailing, ...lines.slice(end)]
 }
 
 /** Extract the `plugins:` sub-tree (the row list) from a preset patch file. */
@@ -198,7 +218,7 @@ function renderPreset(spec, basePlugins) {
   const plugins = spec.enable.reduce(enableRow, [...basePlugins])
   const withMode = spec.presentation === null
     ? plugins
-    : setPresentationMode(plugins, spec.presentation)
+    : setPresentation(plugins, spec.presentation)
   const out = [
     `    - id: preset-${spec.id}`,
     "      name: '@deepseek-ai/dsh-agent-preset'",

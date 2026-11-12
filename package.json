@@ -1,6 +1,6 @@
 {
   "name": "dsh-preset-generator",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Materialize DeepSeek Harness agent presets from the base preset shipped inside the application.",
   "private": true,
   "type": "module",
