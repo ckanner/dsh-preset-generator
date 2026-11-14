@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+Both generated presets now use PTC.
+
+**LCU moves to a PTC bridge.** The `heavy` preset no longer swaps in
+`tool-executor-native`; LCU's Computer/Browser runtime is exposed as the PTC
+`cua` object instead of a directly-callable `js` tool. A profile regenerated
+against 0.3.0 therefore has `tool-executor-ptc` in both `daily` and `heavy`.
+
+
 ## 0.2.0
 
 Track DSH Desktop 0.2.2 and stop generating the deprecated presentation selector.

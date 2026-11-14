@@ -49,10 +49,10 @@ const DEFAULT_PROFILE = join(homedir(), '.dsh', 'profiles', 'desktop')
 const BEGIN = '# >>> BEGIN generated presets (scripts/gen-presets.mjs) >>>'
 const END = '# <<< END generated presets <<<'
 
-/** The two presets this script owns. `daily` is a faithful PTC + Codex; `heavy`
- * selects `native` presentation so LCU's tools stay directly callable. A preset
- * declares exactly one presentation, and DSH 0.2.2 deprecates the selector in
- * favour of mounting `dsh-tool-executor-native` / `-ptc` directly. */
+/** The two presets this script owns. Both are PTC: LCU now exposes its
+ * Computer/Browser runtime through the PTC `cua` bridge, not a native `js` tool.
+ * DSH 0.2.2 deprecates the presentation selector in favour of mounting
+ * `dsh-tool-executor-ptc` directly. */
 const PRESETS = {
   daily: {
     id: 'daily',
@@ -70,14 +70,11 @@ const PRESETS = {
   heavy: {
     id: 'heavy',
     name: '重活',
-    description: '超前/困难的重活：需要 Computer 或 Browser 时用',
+    description: '重活：PTC Computer/Browser CUA + Codex 委派',
     order: 6,
-    // `native` so LCU's tools stay directly callable. A preset declares one
-    // presentation; the choice is "all tools native" (here) or pure `ptc`, where
-    // the model would have to nest a whole CUA program inside a run_code string.
-    // No tool row is added here — the plugin is mounted at the profile root and
-    // registers its tools per Agent by checking this preset's id.
-    presentation: 'native',
+    // LCU is a root plugin: it registers its PTC `cua` bridge per Agent by
+    // checking this preset's id. No tool row is added here.
+    presentation: 'ptc',
     // Same reason as `daily`: the official Codex row stays disabled so that
     // `dsh-subagent-codex-pro` is the only provider of `subagent_codex`.
     enable: [],

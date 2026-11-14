@@ -36,12 +36,11 @@ make this script **append a second block** instead of replacing the first.
 | Preset | Base | Policy |
 |---|---|---|
 | `daily` (日常) | the shipped `ptc` preset | plugin rows, Codex delegation via a separate provider |
-| `heavy` (重活) | the same, with `tool-executor-native` | everything above, plus computer use |
+| `heavy` (重活) | the same, with `tool-executor-ptc` | everything above, plus the LCU Computer/Browser CUA bridge |
 
-`tool-executor-native` is deliberate: in pure `ptc` presentation the model only sees `run_code`, so a
-directly-callable tool would have to be nested as a JavaScript string inside another JavaScript program. DSH
-0.2.1 removed the old `both` mode — a preset declares exactly one presentation, `native` or `ptc` — so `heavy`
-opts out of PTC entirely to keep computer-use tools directly callable.
+Both presets use PTC. LCU exposes its ChatGPT-app Computer/Browser runtime through the PTC `cua`
+bridge: `cua.getApp`, `cua.getTab`, screenshots and handle methods all run through `run_code`, so
+`heavy` no longer opts out of PTC for a directly-callable native `js` tool.
 
 The official Codex tool is no longer a per-preset row: as of DSH 0.2.1 the `@deepseek-ai/dsh-subagent-codex`
 bundle contributes a **global** `subagent_codex` tool, and a separate provider (`dsh-subagent-codex-pro`)

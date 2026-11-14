@@ -142,14 +142,14 @@ test('the presets carry the base’s current tool-subagent surface', { skip }, (
   assert.ok(!text.includes('{{cwd}}'), 'the {{cwd}} prompt variable no longer exists')
 })
 
-test('heavy mounts the native executor and daily the PTC executor', { skip }, () => {
+test('both generated presets mount the PTC executor', { skip }, () => {
   const path = syntheticPatch()
   generate(path)
   const text = readFileSync(path, 'utf8')
   // DSH 0.2.2 deprecates the tool-presentation selector; presets name the
   // executor plugin directly and never carry a `mode:` field.
   assert.match(text, /- id: tool-executor-ptc\n\s+name: '@deepseek-ai\/dsh-tool-executor-ptc'/)
-  assert.match(text, /- id: tool-executor-native\n\s+name: '@deepseek-ai\/dsh-tool-executor-native'/)
+  assert.doesNotMatch(text, /tool-executor-native/)
   assert.doesNotMatch(text, /tool-presentation/)
   assert.doesNotMatch(text, /^\s+mode:/m)
 })
