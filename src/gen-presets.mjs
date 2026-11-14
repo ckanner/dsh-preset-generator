@@ -315,7 +315,7 @@ function spliceBlock(text, body) {
       + BEGIN + replaceOwnEntry(region, body) + END
       + text.slice(end + END.length)
   }
-  const separator = text.endsWith('\n') ? '\n' : '\n\n'
+  const separator = text === '' ? '' : text.endsWith('\n') ? '\n' : '\n\n'
   return `${text}${separator}${BEGIN}\n${body}\n${END}\n`
 }
 
@@ -330,7 +330,17 @@ function main() {
     process.stdout.write(`${BEGIN}\n${body}\n${END}\n`)
   } else {
     const target = opts.out ?? join(opts.profile, 'cordis.patch.yml')
-    const before = readFileSync(target, 'utf8')
+    let before
+    let missing = false
+    try {
+      before = readFileSync(target, 'utf8')
+    } catch (error) {
+      // A new profile may not have a patch yet. Only absence is an empty
+      // document; an unreadable or invalid existing target must still fail.
+      if (error.code !== 'ENOENT') throw error
+      before = ''
+      missing = true
+    }
     // Never delete a preset this file already had. A re-run is the documented
     // response to a DSH upgrade, and it must not be able to take away the mode a
     // user relies on as a side effect of an argument they did not pass.
@@ -344,7 +354,8 @@ function main() {
         )
       }
     }
-    writeFileSync(target, spliceBlock(before, body), { mode: 0o600 })
+    // Do not overwrite a patch another writer created after the missing read.
+    writeFileSync(target, spliceBlock(before, body), { mode: 0o600, flag: missing ? 'wx' : 'w' })
     process.stderr.write(`${verb} ${target}\n`)
   }
   process.stderr.write(

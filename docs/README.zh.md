@@ -11,6 +11,12 @@ node src/gen-presets.mjs --out FILE   # 写到别处
 node src/gen-presets.mjs --daily-only # 文件里已有 heavy 时拒绝
 ```
 
+目标文件不存在时，会在已有的父目录中创建文件；首次使用、profile 里尚无
+`cordis.patch.yml` 时也可以直接生成。已有文件则原地更新并保留其他设置。
+父目录必须已经存在；无法读取的文件、目录类型的目标及其他文件系统错误会终止
+操作，不会把已有内容当作空文件处理。
+新文件以独占方式创建，运行期间其他程序抢先写入的补丁不会被覆盖。
+
 ## 为什么需要它
 
 DSH 的 agent preset **没有继承**。一个 preset 的 `plugins` 列表就是它完整的组合，而 patch 是**整体替换**一个条目而不是合并进去。所以自定义 preset 必须把基底 preset 重述一遍 —— 而基底随应用一起发布、会随 DSH 升级变化，手抄注定跟不上。

@@ -15,7 +15,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -139,6 +139,98 @@ test('the marker still names the path profiles were generated with', () => {
   const source = readFileSync(SCRIPT, 'utf8')
   assert.ok(source.includes(`const BEGIN = '${BEGIN}'`), 'the BEGIN marker must be unchanged')
   assert.ok(source.includes(`const END = '${END}'`))
+})
+
+test('--out creates a missing patch and later runs preserve added settings', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-preset-first-output-'))
+  tempDirs.push(directory)
+  const path = join(directory, 'new.patch.yml')
+  assert.equal(existsSync(path), false)
+  generate(path)
+  const once = readFileSync(path, 'utf8')
+  assert.ok(once.startsWith(`${BEGIN}\n`))
+  assert.ok(once.includes('preset-daily') && once.includes('preset-heavy'))
+  if (process.platform !== 'win32') assert.equal(statSync(path).mode & 0o777, 0o600)
+
+  const configured = `${once}\n- id: agent-preset-registry\n  config:\n    default: heavy\n`
+  writeFileSync(path, configured)
+  generate(path)
+  assert.equal(readFileSync(path, 'utf8'), configured)
+  generate(path)
+  assert.equal(readFileSync(path, 'utf8'), configured)
+})
+
+test('--profile creates its first cordis.patch.yml without changing other files', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-preset-first-profile-'))
+  tempDirs.push(directory)
+  const sentinel = join(directory, 'cordis.yml')
+  writeFileSync(sentinel, 'existing profile configuration\n')
+  execFileSync(process.execPath, [SCRIPT, '--asar', ASAR, '--profile', directory], { stdio: 'pipe' })
+  const patch = readFileSync(join(directory, 'cordis.patch.yml'), 'utf8')
+  assert.ok(patch.startsWith(`${BEGIN}\n`))
+  assert.ok(patch.includes('preset-daily') && patch.includes('preset-heavy'))
+  assert.equal(readFileSync(sentinel, 'utf8'), 'existing profile configuration\n')
+})
+
+test('missing parent directories and existing directory targets still fail', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-preset-output-errors-'))
+  tempDirs.push(directory)
+  const missingParent = join(directory, 'missing')
+  const path = join(missingParent, 'patch.yml')
+  assert.throws(() => generate(path), error => {
+    const stderr = String(error.stderr ?? '')
+    return stderr.includes('ENOENT') && stderr.includes(path)
+  })
+  assert.equal(existsSync(missingParent), false)
+  const sentinel = join(directory, 'keep.txt')
+  writeFileSync(sentinel, 'keep\n')
+  assert.throws(() => generate(directory), error => /EISDIR|EPERM/.test(String(error.stderr ?? '')))
+  assert.equal(readFileSync(sentinel, 'utf8'), 'keep\n')
+})
+
+test('a denied patch read never becomes an empty document or overwrites the file', () => {
+  const path = syntheticPatch()
+  const before = readFileSync(path, 'utf8')
+  const preload = join(dirname(path), 'deny-patch-read.mjs')
+  // Inject the OS error at the real CLI boundary so this also runs as root,
+  // where chmod alone cannot reproduce a permission-denied read.
+  writeFileSync(preload, `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const read = fs.readFileSync;
+fs.readFileSync = function(path, ...args) {
+  if (path === ${JSON.stringify(path)}) throw Object.assign(new Error('fixture denied patch read'), { code: 'EACCES' });
+  return read.call(this, path, ...args);
+};
+syncBuiltinESMExports();
+`)
+  assert.throws(() => execFileSync(process.execPath,
+    ['--import', preload, SCRIPT, '--asar', ASAR, '--out', path], { stdio: 'pipe' }),
+    error => /EACCES/.test(String(error.stderr ?? '')))
+  assert.equal(readFileSync(path, 'utf8'), before)
+})
+
+test('first creation does not overwrite a patch that appears after the missing read', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-preset-output-race-'))
+  tempDirs.push(directory)
+  const path = join(directory, 'new.patch.yml')
+  const preload = join(directory, 'create-after-read.mjs')
+  writeFileSync(preload, `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const read = fs.readFileSync;
+fs.readFileSync = function(path, ...args) {
+  try { return read.call(this, path, ...args); } catch (error) {
+    if (path === ${JSON.stringify(path)} && error.code === 'ENOENT') fs.writeFileSync(path, 'another writer\\n', { flag: 'wx' });
+    throw error;
+  }
+};
+syncBuiltinESMExports();
+`)
+  assert.throws(() => execFileSync(process.execPath,
+    ['--import', preload, SCRIPT, '--asar', ASAR, '--out', path], { stdio: 'pipe' }),
+    error => /EEXIST/.test(String(error.stderr ?? '')))
+  assert.equal(readFileSync(path, 'utf8'), 'another writer\n')
 })
 
 test('a run replaces the block, keeps every other entry, and stays idempotent', () => {

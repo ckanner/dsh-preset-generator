@@ -11,6 +11,12 @@ The API neither writes the desktop profile nor mounts a named preset or grants
 GUI/delegation access. Existing profile-preservation tests now use portable ASAR
 fixtures and run in CI without the Mac application.
 
+The CLI now creates an absent output file in an existing parent directory,
+including a profile's first `cordis.patch.yml`. Existing files retain the same
+merge behavior; only `ENOENT` is treated as an empty patch. Other read errors
+still stop before writing, and missing parent directories are not created.
+Exclusive first creation also preserves a patch written concurrently.
+
 ## 0.3.0
 
 Both generated presets now use PTC.

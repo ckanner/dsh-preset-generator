@@ -12,6 +12,14 @@ node src/gen-presets.mjs --out FILE   # write somewhere else
 node src/gen-presets.mjs --daily-only # refuse if the file already defines heavy
 ```
 
+An absent output file is created in its existing parent directory. This also
+supports a profile that does not yet have `cordis.patch.yml`. Existing files are
+updated in place, preserving other settings. The parent directory must already
+exist; unreadable files, directory targets and other filesystem errors stop the
+run without treating existing content as empty.
+New-file creation is exclusive: a patch created by another writer during the
+run is not overwritten.
+
 ## Why this exists
 
 DSH agent presets have **no inheritance**. A preset's `plugins` list is its complete composition, and a patch
