@@ -27,10 +27,10 @@ DSH 的 agent preset **没有继承**。一个 preset 的 `plugins` 列表就是
 
 | preset | 基底 | 策略 |
 |---|---|---|
-| `daily`（日常） | 自带的 `ptc` preset | 各插件行；Codex 委派由一套独立 provider 提供 |
-| `heavy`（重活） | 同上，且 `tool-executor-native` | 以上全部，外加 computer use |
+| `daily`（日常） | 自带的 `ptc` preset | PTC executor；标记为日常编码 |
+| `heavy`（重活） | 同一个 `ptc` preset | 相同的 executor 策略；标记为重活 |
 
-`tool-executor-native` 是刻意的：纯 `ptc` 呈现下模型只看得到 `run_code`，一个可直接调用的工具就得嵌成另一个 JavaScript 程序里的字符串。DSH 0.2.2 弃用了旧的 selector，`both` 模式早已移除 —— 一个 preset 只能声明一种呈现，且只有 `native` 与 `ptc` —— 所以 `heavy` 干脆放弃 PTC，让 computer-use 工具保持可直接调用。
+两个 preset 都使用 PTC。LCU 通过 PTC 的 `cua` 桥暴露 ChatGPT 应用的 Computer/Browser runtime；`cua.getApp`、`cua.getTab`、截图和 handle 方法都经 `run_code` 运行，重活不再切换到 native executor 的直接 `js` 工具。目前生成的插件列表使用相同策略；GUI 与 Codex 委派是否可用取决于另外挂载的 provider 和各自 allowlist，`heavy` 这个名字本身不授予这些能力。
 
 官方的 Codex 工具不再是 per-preset 行：从 DSH 0.2.1 起，`@deepseek-ai/dsh-subagent-codex` bundle 提供的是**全局**的 `subagent_codex` 工具；独立 provider（`dsh-subagent-codex-pro`）在这些 preset 里按 Agent 注册同名工具，遮蔽全局那个。而**同一个** scope 内的两次注册仍会冲突，所以不能在这个 provider 之外再启用同名的 `tool-subagent` 行。
 
@@ -53,10 +53,36 @@ DSH 的 agent preset **没有继承**。一个 preset 的 `plugins` 列表就是
 ## 开发
 
 ```sh
-npm test    # node --test；基底来自已安装的应用
+npm test    # 跨平台 CLI/ASAR 夹具及 SDK composition 契约
 ```
 
-测试跑在一份**合成的 profile patch** 上，应用未安装时自动跳过，所以在本地有意义、在 CI 上也能过。
+测试使用合成 ASAR 与 profile patch，配置保留、幂等、旧 selector 和新 executor 行都会在没有桌面应用的 CI 上实际执行。它们不认证用户已安装的应用，也不调用模型。
+
+## SDK composition API
+
+本包还导出纯 ESM API。导入不会读取文件、启动 runtime、调用模型或改写桌面 profile。桌面生成器与 SDK composition 共用 `src/policy.mjs`，SDK 调用方将 patch 应用于独立 profile。
+
+```js
+import {
+  inspectPtcBundle, createSdkPtcComposition, validateSdkPtcAdmission,
+} from 'dsh-preset-generator'
+
+// 调用方从确切的已安装 bundle 读取这些值，不能只猜版本号。
+const evidence = inspectPtcBundle({ packageJson, files, sourceRevision })
+const composition = createSdkPtcComposition({
+  runtimeProfile: 'flywheel-sdk', preset: 'heavy', baseRows, ptcEvidence: evidence,
+})
+// 经 SDK 宿主的 profile loader 应用 composition.overlay，然后执行探针。
+const admission = validateSdkPtcAdmission(composition, observed, { requireImages: true })
+```
+
+`baseRows` 是宿主解析完配置后的有效 JSON 插件行，id 必须唯一，不能传未展开的 `insert` 指令。overlay 禁用 native executor、启用 PTC、设置 `tool-fs.applyPatch: false`，同时保留已提供的 fs/PTC 配置。已知的旧 `tool-presentation` 行也会被禁用。SDK profile 拒绝 `desktop`；不提供 `baseRows` 时，只产生官方最小 SDK PTC patch，不声称检查过自定义配置。
+
+返回的 `digest` 绑定 profile、策略、基底、overlay 和 bundle 证据。`compositionDigest(value)` 对规范化 JSON 求哈希；`files` 是相对路径到确切文本的映射。`inspectPtcBundle` 返回各文件哈希、实际 manifest exports 和描述性的源码线索，始终保留 `outputContract: 'unknown'`：rc.3 release 与后续 master 可能同为 `0.2.2-rc.3`，但 exports 与图片/输出语义不同，因此版本必须附带源码身份。参见 [release PTC manifest](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/core/tool-executor-ptc/package.json) 与[后续 manifest](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/package.json)。
+
+准入要求实际观测到匹配的 `compositionDigest`、`runtimeProfile`、`executor: 'ptc'`、`activeExecutors: ['ptc']`、包含 `run_code` 的 `tools`、`probeStatus: 'passed'`，以及已验证的 `outputContract`（`deferred-context-v1` 或 `inspect-image-v1`）。若 composition 提供了 bundle 证据，观测的 `bundleDigest` 也必须匹配。`requireImages` 还要求 `imageProbeStatus: 'passed'`，缺少图片探针永远不能声明已支持图片。worker 应从真实 runtime 获取这些事实；本库只校验回执、哈希 JSON 观测，并拒绝生成后被修改的 composition，不认证回执的传输通道。
+
+`provenance.kind` 为 `sdk-global-composition`，`namedPresetMounted` 恒为 false：共享日常/重活策略不代表存在 named-preset SDK RPC。GUI 与委派必须分别授权。消费方另外增加权限或 provider overlay 后，仍需在自己的总摘要中绑定完整最终配置。executor 图片探针与 provider 向模型传图是不同的验证。
 
 ## 许可
 

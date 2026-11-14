@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+Export a pure ESM SDK composition API alongside the existing desktop CLI.
+`createSdkPtcComposition` shares daily/heavy policy and returns an isolated PTC
+overlay with canonical base/bundle provenance. `inspectPtcBundle` distinguishes
+same-version source bundles without inferring runtime support, and
+`validateSdkPtcAdmission` checks correlated executor/output/image observations.
+The API neither writes the desktop profile nor mounts a named preset or grants
+GUI/delegation access. Existing profile-preservation tests now use portable ASAR
+fixtures and run in CI without the Mac application.
+
 ## 0.3.0
 
 Both generated presets now use PTC.

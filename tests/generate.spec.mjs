@@ -1,8 +1,8 @@
 /**
  * The generator, against a synthetic profile patch.
  *
- * The base preset comes from the installed application, so these skip when it is
- * not there. Everything else is built here: a patch with the markers and the
+ * The base preset and ASAR container are portable fixtures. Everything else is
+ * built here: a patch with the markers and the
  * foreign entries DSH's settings UI is known to write between them.
  *
  * The properties under test are the ones that failed in production. Splicing the
@@ -15,15 +15,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SCRIPT = join(ROOT, 'src', 'gen-presets.mjs')
-const ASAR = '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar'
-const skip = existsSync(ASAR) ? false : 'the DeepSeek Harness application is not installed'
 
 /** The marker this script must keep using, whatever path it now lives at. */
 const BEGIN = '# >>> BEGIN generated presets (scripts/gen-presets.mjs) >>>'
@@ -34,9 +32,42 @@ process.on('exit', () => {
   for (const directory of tempDirs) rmSync(directory, { recursive: true, force: true })
 })
 
+// Exercise the real archive reader and CLI on every platform. This deliberately
+// small base includes a nested group and a config that must survive verbatim;
+// it is a test fixture, not a claim about a user's installed application.
+const fixtureDirectory = mkdtempSync(join(tmpdir(), 'dsh-preset-asar-'))
+tempDirs.push(fixtureDirectory)
+const ASAR = join(fixtureDirectory, 'app.asar')
+function fixtureAsar(executor = 'tool-executor-ptc') {
+  const contents = Buffer.from([
+    '- insert:', '    - id: preset-ptc', "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:', '        id: ptc', '        plugins:',
+    '          - id: tool-fs', "            name: '@deepseek-ai/dsh-tool-fs'",
+    '            config:', '              applyPatch: false',
+    '          - id: delegation', '            name: cordis:group', '            group: true',
+    '            config:', '              - id: tool-subagent',
+    "                name: '@deepseek-ai/dsh-tool-subagent'",
+    '                config:', '                  provider: spawn', '                  toolName: subagent',
+    `          - id: ${executor}`,
+    `            name: '@deepseek-ai/dsh-${executor === 'tool-presentation' ? 'agent-tool-presentation' : executor}'`,
+    ...(executor === 'tool-presentation' ? ['            config:', '              mode: native'] : []),
+    '',
+  ].join('\n'))
+  let leaf = { size: contents.length, offset: '0' }
+  for (const segment of 'dsh/node_modules/@deepseek-ai/dsh-web-app/presets/ptc.patch.yml'.split('/').reverse()) {
+    leaf = { files: { [segment]: leaf } }
+  }
+  const json = Buffer.from(JSON.stringify(leaf))
+  const header = Buffer.alloc(16)
+  header.writeUInt32LE(8 + json.length, 4)
+  header.writeUInt32LE(json.length, 12)
+  writeFileSync(ASAR, Buffer.concat([header, json, contents]))
+}
+fixtureAsar()
+
 /** A profile patch with the markers, an old block, and the settings entries. */
 function syntheticPatch(options = {}) {
-  const directory = mkdtempSync(join(homedir(), '.dsh-preset-generator-test-'))
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-preset-generator-test-'))
   tempDirs.push(directory)
   const path = join(directory, 'cordis.patch.yml')
   writeFileSync(path, [
@@ -73,7 +104,7 @@ function syntheticPatch(options = {}) {
 
 /** Run the generator, in place, against a synthetic patch. */
 function generate(path, args = []) {
-  return execFileSync(process.execPath, [SCRIPT, '--out', path, ...args], {
+  return execFileSync(process.execPath, [SCRIPT, '--asar', ASAR, '--out', path, ...args], {
     cwd: ROOT,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -110,7 +141,7 @@ test('the marker still names the path profiles were generated with', () => {
   assert.ok(source.includes(`const END = '${END}'`))
 })
 
-test('a run replaces the block, keeps every other entry, and stays idempotent', { skip }, () => {
+test('a run replaces the block, keeps every other entry, and stays idempotent', () => {
   const path = syntheticPatch()
   const before = topLevelIds(readFileSync(path, 'utf8'))
   generate(path)
@@ -128,7 +159,7 @@ test('a run replaces the block, keeps every other entry, and stays idempotent', 
   assert.equal(readFileSync(path, 'utf8'), once, 'a second run must change nothing')
 })
 
-test('the presets carry the base’s current tool-subagent surface', { skip }, () => {
+test('the presets preserve the base’s nested tool-subagent surface', () => {
   const path = syntheticPatch()
   generate(path)
   const text = readFileSync(path, 'utf8')
@@ -140,9 +171,10 @@ test('the presets carry the base’s current tool-subagent surface', { skip }, (
   assert.equal(codexRows.length, 0, 'the current base ships no per-preset Codex row')
   assert.doesNotMatch(text, /^\s+backgroundMode:/m, 'backgroundMode was removed from tool-subagent config')
   assert.ok(!text.includes('{{cwd}}'), 'the {{cwd}} prompt variable no longer exists')
+  assert.equal(text.match(/toolName: subagent/g)?.length, 2, 'nested configuration survives in both presets')
 })
 
-test('both generated presets mount the PTC executor', { skip }, () => {
+test('both generated presets mount the PTC executor', () => {
   const path = syntheticPatch()
   generate(path)
   const text = readFileSync(path, 'utf8')
@@ -154,7 +186,7 @@ test('both generated presets mount the PTC executor', { skip }, () => {
   assert.doesNotMatch(text, /^\s+mode:/m)
 })
 
-test('settings entries are left exactly where the settings UI put them', { skip }, () => {
+test('settings entries are left exactly where the settings UI put them', () => {
   // The whole class of bug this replaces came from moving them: a run relocated
   // them out of the region, the next settings write landed inside again, and each
   // run left another copy behind. Replacing only this script's own entry means
@@ -176,7 +208,7 @@ test('settings entries are left exactly where the settings UI put them', { skip 
   assert.equal(defaultValue(twice), 'standard', 'the value it had is the value it keeps')
 })
 
-test('a value the settings UI changed is not overwritten', { skip }, () => {
+test('a value the settings UI changed is not overwritten', () => {
   const path = syntheticPatch()
   generate(path)
   const lines = readFileSync(path, 'utf8').split('\n')
@@ -191,7 +223,7 @@ test('a value the settings UI changed is not overwritten', { skip }, () => {
   assert.equal(defaultValue(readFileSync(path, 'utf8')), 'heavy')
 })
 
-test('--daily-only refuses to drop a preset the file already defines', { skip }, () => {
+test('--daily-only refuses to drop a preset the file already defines', () => {
   const path = syntheticPatch()
   generate(path)
   assert.throws(
@@ -199,4 +231,19 @@ test('--daily-only refuses to drop a preset the file already defines', { skip },
     (error) => /heavy/.test(String(error.stderr ?? '') + String(error.message ?? '')),
   )
   assert.ok(readFileSync(path, 'utf8').includes('preset-heavy'), 'the preset is still there')
+})
+
+test('legacy selector and native executor bases both become concrete PTC presets', () => {
+  try {
+    for (const executor of ['tool-presentation', 'tool-executor-native']) {
+      fixtureAsar(executor)
+      const path = syntheticPatch()
+      generate(path)
+      const text = readFileSync(path, 'utf8')
+      assert.equal(text.match(/- id: tool-executor-ptc/g)?.length, 2)
+      assert.doesNotMatch(text, /tool-presentation|tool-executor-native|mode: native/)
+    }
+  } finally {
+    fixtureAsar()
+  }
 })

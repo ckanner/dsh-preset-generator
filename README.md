@@ -35,12 +35,15 @@ make this script **append a second block** instead of replacing the first.
 
 | Preset | Base | Policy |
 |---|---|---|
-| `daily` (日常) | the shipped `ptc` preset | plugin rows, Codex delegation via a separate provider |
-| `heavy` (重活) | the same, with `tool-executor-ptc` | everything above, plus the LCU Computer/Browser CUA bridge |
+| `daily` (日常) | the shipped `ptc` preset | PTC executor; daily coding label |
+| `heavy` (重活) | the same `ptc` preset | the same executor policy; heavy work label |
 
 Both presets use PTC. LCU exposes its ChatGPT-app Computer/Browser runtime through the PTC `cua`
 bridge: `cua.getApp`, `cua.getTab`, screenshots and handle methods all run through `run_code`, so
 `heavy` no longer opts out of PTC for a directly-callable native `js` tool.
+The generated plugin lists currently have the same policy. GUI availability and
+Codex delegation depend on separately mounted providers and their allowlists;
+the name `heavy` does not itself grant either capability.
 
 The official Codex tool is no longer a per-preset row: as of DSH 0.2.1 the `@deepseek-ai/dsh-subagent-codex`
 bundle contributes a **global** `subagent_codex` tool, and a separate provider (`dsh-subagent-codex-pro`)
@@ -73,11 +76,65 @@ relocated — including values this script would not have chosen.
 ## Development
 
 ```sh
-npm test    # node --test; the base comes from the installed application
+npm test    # portable CLI/ASAR fixtures and SDK composition contracts
 ```
 
-The tests run against a synthetic profile patch and skip themselves when the application is not installed, so
-they are meaningful locally and still pass in CI.
+The tests use a synthetic ASAR and profile patch, so preservation, idempotency,
+legacy selectors and direct executor rows run on CI without a desktop app. They
+do not certify a user's installed application or call a model.
+
+## SDK composition API
+
+The package also exports a pure ESM API. Importing it performs no file access,
+runtime launch, model call, or desktop-profile write. Desktop generation and SDK
+composition share `src/policy.mjs`; SDK callers apply a separate profile patch.
+
+```js
+import {
+  inspectPtcBundle, createSdkPtcComposition, validateSdkPtcAdmission,
+} from 'dsh-preset-generator'
+
+// Values read by the caller from the exact installed bundle, not a version guess.
+const evidence = inspectPtcBundle({ packageJson, files, sourceRevision })
+const composition = createSdkPtcComposition({
+  runtimeProfile: 'flywheel-sdk', preset: 'heavy', baseRows, ptcEvidence: evidence,
+})
+// Apply composition.overlay via the SDK host's profile loader, then run a probe.
+const admission = validateSdkPtcAdmission(composition, observed, { requireImages: true })
+```
+
+`baseRows` are effective JSON plugin rows with unique ids, after the host has
+resolved its configuration; nested patch `insert` directives are rejected. The
+overlay disables the native executor, enables PTC, and sets
+`tool-fs.applyPatch: false`, preserving supplied fs/PTC configuration. A known
+legacy `tool-presentation` row is disabled too. `desktop` is refused as an SDK
+profile. Absent `baseRows`, the result is the official minimal SDK PTC patch; it
+does not claim to have inspected custom configuration.
+
+The returned `digest` binds the profile, policy, base, overlay and bundle
+evidence. `compositionDigest(value)` hashes canonical JSON; files are supplied as
+relative paths mapped to their exact text. `inspectPtcBundle` returns per-file
+hashes, actual manifest exports and descriptive source clues. It always leaves
+`outputContract: 'unknown'`: release rc.3 and later master can share
+`0.2.2-rc.3` while changing exports and image/output semantics. Source identity
+must accompany the version. See the [release PTC manifest](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/core/tool-executor-ptc/package.json)
+and [later manifest](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/package.json).
+
+Admission requires observed `compositionDigest`, `runtimeProfile`,
+`executor: 'ptc'`, `activeExecutors: ['ptc']`, `tools` containing `run_code`,
+`probeStatus: 'passed'`, and a verified `outputContract` of
+`deferred-context-v1` or `inspect-image-v1`. Supplied bundle evidence requires a
+matching observed `bundleDigest`. `requireImages` additionally requires
+`imageProbeStatus: 'passed'`; an absent image probe never advertises image
+support. The worker obtains these facts from its actual runtime. This library
+only checks the receipt, hashes all JSON observations, and rejects a composition
+modified after generation. It does not authenticate the receipt transport.
+
+`provenance.kind` is `sdk-global-composition` and `namedPresetMounted` is always
+false: sharing daily/heavy policy is not a named-preset SDK RPC. GUI and
+delegation remain separate grants. A consumer adding permission or provider
+overlays must also bind the complete final configuration in its own digest.
+Executor image probing and delivery through the provider are separate checks.
 
 ## License
 

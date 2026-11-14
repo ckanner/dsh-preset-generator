@@ -1,9 +1,15 @@
 {
   "name": "dsh-preset-generator",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Materialize DeepSeek Harness agent presets from the base preset shipped inside the application.",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/composition.mjs",
+    "./composition": "./src/composition.mjs",
+    "./policy": "./src/policy.mjs",
+    "./package.json": "./package.json"
+  },
   "license": "MIT",
   "bin": {
     "dsh-preset-generator": "./src/gen-presets.mjs"
@@ -11,6 +17,7 @@
   "files": [
     "src",
     "README.md",
+    "docs/README.zh.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
@@ -19,7 +26,7 @@
     "test": "node --test \"tests/*.spec.mjs\""
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": ">=22.18.0"
   },
   "homepage": "https://github.com/ckanner/dsh-preset-generator#readme",
   "repository": {
