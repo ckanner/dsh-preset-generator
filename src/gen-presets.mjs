@@ -36,6 +36,7 @@
 import { closeSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { PRESETS } from './policy.mjs'
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -53,34 +54,8 @@ const END = '# <<< END generated presets <<<'
  * Computer/Browser runtime through the PTC `cua` bridge, not a native `js` tool.
  * DSH 0.2.2 deprecates the presentation selector in favour of mounting
  * `dsh-tool-executor-ptc` directly. */
-const PRESETS = {
-  daily: {
-    id: 'daily',
-    name: '日常',
-    description: '日常编码：PTC 程序化工具调用 + Codex 委派',
-    order: 5,
-    presentation: 'ptc', // the base's PTC executor, stated explicitly
-    // Nothing to enable. The base ships `tool-subagent-codex` disabled, and it
-    // stays that way: `dsh-subagent-codex-pro` registers its own
-    // `subagent_codex` per Agent, and two rows registering that name in one
-    // scope collide — the later registration throws and its tool never appears.
-    enable: [],
-    append: [],
-  },
-  heavy: {
-    id: 'heavy',
-    name: '重活',
-    description: '重活：PTC Computer/Browser CUA + Codex 委派',
-    order: 6,
-    // LCU is a root plugin: it registers its PTC `cua` bridge per Agent by
-    // checking this preset's id. No tool row is added here.
-    presentation: 'ptc',
-    // Same reason as `daily`: the official Codex row stays disabled so that
-    // `dsh-subagent-codex-pro` is the only provider of `subagent_codex`.
-    enable: [],
-    append: [],
-  },
-}
+// The pure SDK API consumes the same policies without running this CLI or
+// writing the user's desktop profile. LCU attachment remains a separate grant.
 
 // ---------------------------------------------------------------------------
 // Minimal asar reader (Electron's asar is a simple header + flat blob)
@@ -238,10 +213,8 @@ function renderPreset(spec, basePlugins) {
 function parseArgs(argv) {
   const opts = {
     dryRun: false,
-    // Default to the full set: this generator exists for the presets those
-    // `heavy` is the preset that attaches it. Defaulting to daily-only meant a
-    // routine re-run after a DSH upgrade silently deleted the preset computer
-    // use depends on.
+    // Preserve both managed choices on routine upgrades. An existing heavy
+    // preset may be selected by the user or referenced by a plugin allowlist.
     withHeavy: true,
     out: undefined,
     asar: DEFAULT_ASAR,
@@ -342,7 +315,7 @@ function spliceBlock(text, body) {
       + BEGIN + replaceOwnEntry(region, body) + END
       + text.slice(end + END.length)
   }
-  const separator = text.endsWith('\n') ? '\n' : '\n\n'
+  const separator = text === '' ? '' : text.endsWith('\n') ? '\n' : '\n\n'
   return `${text}${separator}${BEGIN}\n${body}\n${END}\n`
 }
 
@@ -357,7 +330,17 @@ function main() {
     process.stdout.write(`${BEGIN}\n${body}\n${END}\n`)
   } else {
     const target = opts.out ?? join(opts.profile, 'cordis.patch.yml')
-    const before = readFileSync(target, 'utf8')
+    let before
+    let missing = false
+    try {
+      before = readFileSync(target, 'utf8')
+    } catch (error) {
+      // A new profile may not have a patch yet. Only absence is an empty
+      // document; an unreadable or invalid existing target must still fail.
+      if (error.code !== 'ENOENT') throw error
+      before = ''
+      missing = true
+    }
     // Never delete a preset this file already had. A re-run is the documented
     // response to a DSH upgrade, and it must not be able to take away the mode a
     // user relies on as a side effect of an argument they did not pass.
@@ -371,7 +354,8 @@ function main() {
         )
       }
     }
-    writeFileSync(target, spliceBlock(before, body), { mode: 0o600 })
+    // Do not overwrite a patch another writer created after the missing read.
+    writeFileSync(target, spliceBlock(before, body), { mode: 0o600, flag: missing ? 'wx' : 'w' })
     process.stderr.write(`${verb} ${target}\n`)
   }
   process.stderr.write(
